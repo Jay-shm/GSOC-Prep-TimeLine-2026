@@ -1,138 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import Header from '../components/Header';
 import AnimatedBackground from '../components/AnimatedBackground';
 import ProgressBar from '../components/ProgressBar';
 import TimelineCard from '../components/TimelineCard';
 import SocialLinks from '../components/SocialLinks';
-import { timelineData } from '../data/timelineData';
-import { TimelinePhase } from '../types';
-import { useAnalytics } from '../hooks/useAnalytics';
+import LoadingSpinner from '../components/UI/LoadingSpinner';
+import ErrorMessage from '../components/UI/ErrorMessage';
+import ProgressSkeleton from '../components/UI/ProgressSkeleton';
+import { useFirebaseProgress } from '../hooks/useFirebaseProgress';
+import { Cloud, CloudOff, Check } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
-  const [phases, setPhases] = useState<TimelinePhase[]>(timelineData);
-  const { trackEvent, updateUserProgress } = useAnalytics();
+  const {
+    phases,
+    loading,
+    saving,
+    error,
+    handleTaskToggle,
+    handleSubtaskToggle,
+    trackEvent,
+  } = useFirebaseProgress();
 
-  const handleTaskToggle = async (phaseId: string, taskId: string) => {
-    const updatedPhases = phases.map(phase =>
-      phase.id === phaseId
-        ? {
-            ...phase,
-            tasks: phase.tasks.map(task =>
-              task.id === taskId
-                ? { ...task, completed: !task.completed, completedAt: !task.completed ? new Date() : undefined }
-                : task
-            )
-          }
-        : phase
-    );
-    
-    setPhases(updatedPhases);
-    
-    // Track analytics
-    const task = phases.find(p => p.id === phaseId)?.tasks.find(t => t.id === taskId);
-    if (task) {
-      await trackEvent('task_completed', {
-        phaseId,
-        taskId,
-        taskTitle: task.title,
-        completed: !task.completed,
-      });
-    }
-    
-    // Update user progress in Firebase
-    await updateProgressToFirebase(updatedPhases);
-  };
+  const [showError, setShowError] = useState(true);
 
-  const handleSubtaskToggle = async (phaseId: string, taskId: string, subtaskId: string) => {
-    const updatedPhases = phases.map(phase =>
-      phase.id === phaseId
-        ? {
-            ...phase,
-            tasks: phase.tasks.map(task =>
-              task.id === taskId
-                ? {
-                    ...task,
-                    subtasks: task.subtasks?.map(subtask =>
-                      subtask.id === subtaskId
-                        ? { ...subtask, completed: !subtask.completed, completedAt: !subtask.completed ? new Date() : undefined }
-                        : subtask
-                    )
-                  }
-                : task
-            )
-          }
-        : phase
-    );
-    
-    setPhases(updatedPhases);
-    
-    // Track analytics
-    const subtask = phases.find(p => p.id === phaseId)?.tasks.find(t => t.id === taskId)?.subtasks?.find(s => s.id === subtaskId);
-    if (subtask) {
-      await trackEvent('subtask_completed', {
-        phaseId,
-        taskId,
-        subtaskId,
-        subtaskTitle: subtask.title,
-        completed: !subtask.completed,
-      });
-    }
-    
-    // Update user progress in Firebase
-    await updateProgressToFirebase(updatedPhases);
-  };
-
-  const updateProgressToFirebase = async (updatedPhases: TimelinePhase[]) => {
-    const totalTasks = updatedPhases.reduce((sum, phase) => sum + phase.tasks.length, 0);
-    const completedTasks = updatedPhases.reduce(
-      (sum, phase) => sum + phase.tasks.filter(task => task.completed).length,
-      0
-    );
-    const totalSubtasks = updatedPhases.reduce(
-      (sum, phase) => sum + phase.tasks.reduce((taskSum, task) => taskSum + (task.subtasks?.length || 0), 0),
-      0
-    );
-    const completedSubtasks = updatedPhases.reduce(
-      (sum, phase) => sum + phase.tasks.reduce(
-        (taskSum, task) => taskSum + (task.subtasks?.filter(subtask => subtask.completed).length || 0),
-        0
-      ),
-      0
-    );
-
-    const progressData = {
-      phases: updatedPhases.reduce((acc, phase) => {
-        acc[phase.id] = {
-          tasks: phase.tasks.reduce((taskAcc, task) => {
-            taskAcc[task.id] = {
-              completed: task.completed,
-              completedAt: task.completedAt,
-              subtasks: task.subtasks?.reduce((subtaskAcc, subtask) => {
-                subtaskAcc[subtask.id] = {
-                  completed: subtask.completed,
-                  completedAt: subtask.completedAt,
-                };
-                return subtaskAcc;
-              }, {} as any) || {},
-            };
-            return taskAcc;
-          }, {} as any),
-        };
-        return acc;
-      }, {} as any),
-      analytics: {
-        totalTasks,
-        completedTasks,
-        totalSubtasks,
-        completedSubtasks,
-        progressPercentage: Math.round((completedTasks / totalTasks) * 100),
-        lastActive: new Date(),
-      },
-    };
-
-    await updateUserProgress(progressData);
-  };
+  useEffect(() => {
+    // Track page view
+    trackEvent('login', { 
+      timestamp: new Date().toISOString(),
+      page: 'dashboard'
+    });
+  }, []);
 
   const totalTasks = phases.reduce((sum, phase) => sum + phase.tasks.length, 0);
   const completedTasks = phases.reduce(
@@ -152,13 +50,88 @@ const Dashboard: React.FC = () => {
     0
   );
 
+  if (loading) {
+    return (
+      <div className="min-h-screen relative">
+        <AnimatedBackground />
+        <Header />
+        
+        <main className="relative z-10">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+            {/* Hero Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-center mb-8 sm:mb-12"
+            >
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-2 sm:mb-4 px-2">
+                My GSoC 2026 AI Journey
+              </h1>
+              <p className="text-base sm:text-lg md:text-xl text-gray-600 max-w-2xl mx-auto px-4">
+                Loading your progress...
+              </p>
+              <div className="flex justify-center mt-4">
+                <LoadingSpinner size="lg" />
+              </div>
+            </motion.div>
+
+            <ProgressSkeleton />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen relative">
       <AnimatedBackground />
       <Header />
       
+      {/* Sync Status Indicator */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="fixed top-16 right-4 z-50"
+      >
+        <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg shadow-lg text-xs font-medium ${
+          saving 
+            ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+            : 'bg-green-50 text-green-700 border border-green-200'
+        }`}>
+          {saving ? (
+            <>
+              <LoadingSpinner size="sm" />
+              <span>Saving...</span>
+            </>
+          ) : (
+            <>
+              <Check className="w-3 h-3" />
+              <span>Synced</span>
+            </>
+          )}
+        </div>
+      </motion.div>
+      
       <main className="relative z-10">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+          {/* Error Message */}
+          <AnimatePresence>
+            {error && showError && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="mb-6"
+              >
+                <ErrorMessage 
+                  message={error} 
+                  onDismiss={() => setShowError(false)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Hero Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
